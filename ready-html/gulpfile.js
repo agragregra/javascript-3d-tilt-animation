@@ -1,23 +1,29 @@
 let preprocessor = 'sass', // Preprocessor (sass, less, styl); 'sass' also work with the Scss syntax in blocks/ folder.
 		fileswatch   = 'html,htm,txt,json,md,woff2' // List of files extensions for watching & hard reload
 
-const { src, dest, parallel, series, watch } = require('gulp')
-const browserSync  = require('browser-sync').create()
-const bssi         = require('browsersync-ssi')
-const ssi          = require('ssi')
-const webpack      = require('webpack-stream')
-const sass         = require('gulp-sass')(require('sass'))
-const sassglob     = require('gulp-sass-glob')
-const less         = require('gulp-less')
-const lessglob     = require('gulp-less-glob')
-const styl         = require('gulp-stylus')
-const stylglob     = require("gulp-empty")
-const cleancss     = require('gulp-clean-css')
-const autoprefixer = require('gulp-autoprefixer')
-const rename       = require('gulp-rename')
-const imagecomp    = require("compress-images")
-const rsync        = require('gulp-rsync')
-const del          = require('del')
+import pkg from 'gulp'
+const { gulp, src, dest, parallel, series, watch } = pkg
+
+import browserSync  from 'browser-sync'
+import bssi         from 'browsersync-ssi'
+import ssi          from 'ssi'
+import webpack      from 'webpack-stream'
+import gulpSass     from 'gulp-sass'
+import dartSass     from 'sass'
+import sassglob     from 'gulp-sass-glob'
+const sass          = gulpSass(dartSass)
+import less         from 'gulp-less'
+import lessglob     from 'gulp-less-glob'
+import styl         from 'gulp-stylus'
+import stylglob     from 'gulp-noop'
+import postCss      from 'gulp-postcss'
+import cssnano      from 'cssnano'
+import autoprefixer from 'autoprefixer'
+import imagemin     from 'gulp-imagemin'
+import changed      from 'gulp-changed'
+import rename       from 'gulp-rename'
+import rsync        from 'gulp-rsync'
+import del          from 'del'
 
 function browsersync() {
 	browserSync.init({
@@ -25,9 +31,10 @@ function browsersync() {
 			baseDir: 'app/',
 			middleware: bssi({ baseDir: 'app/', ext: '.html' })
 		},
-		// tunnel: 'yousutename', // Attempt to use the URL https://yousutename.loca.lt
+		ghostMode: { clicks: false },
 		notify: false,
-		online: true
+		online: true,
+		// tunnel: 'yousutename', // Attempt to use the URL https://yousutename.loca.lt
 	})
 }
 
@@ -35,6 +42,7 @@ function scripts() {
 	return src(['app/js/*.js', '!app/js/*.min.js'])
 		.pipe(webpack({
 			mode: 'production',
+			performance: { hints: false },
 			module: {
 				rules: [
 					{
@@ -47,13 +55,11 @@ function scripts() {
 						}
 					}
 				]
-			},
-			output: {
-				filename: 'app.min.js'
 			}
 		})).on('error', function handleError() {
 			this.emit('end')
 		})
+		.pipe(rename('app.min.js'))
 		.pipe(dest('app/js'))
 		.pipe(browserSync.stream())
 }
@@ -62,28 +68,21 @@ function styles() {
 	return src([`app/styles/${preprocessor}/*.*`, `!app/styles/${preprocessor}/_*.*`])
 		.pipe(eval(`${preprocessor}glob`)())
 		.pipe(eval(preprocessor)())
-		.pipe(autoprefixer({ overrideBrowserslist: ['last 10 versions'], grid: true }))
-		.pipe(cleancss({ level: { 1: { specialComments: 0 } },/* format: 'beautify' */ }))
-		.pipe(rename({ suffix: ".min" }))
+		.pipe(postCss([
+			autoprefixer({ grid: 'autoplace' }),
+			cssnano({ preset: ['default', { discardComments: { removeAll: true } }] })
+		]))
+		.pipe(rename({ suffix: '.min' }))
 		.pipe(dest('app/css'))
 		.pipe(browserSync.stream())
 }
 
-async function images() {
-	imagecomp(
-		"app/images/src/**/*",
-		"app/images/dist/",
-		{ compress_force: false, statistic: true, autoupdate: true }, false,
-		{ jpg: { engine: "mozjpeg", command: ["-quality", "75"] } },
-		{ png: { engine: "pngquant", command: ["--quality=75-100", "-o"] } },
-		{ svg: { engine: "svgo", command: "--multipass" } },
-		{ gif: { engine: "gifsicle", command: ["--colors", "64", "--use-col=web"] } },
-		function (err, completed) {
-			if (completed === true) {
-				browserSync.reload()
-			}
-		}
-	)
+function images() {
+	return src(['app/images/src/**/*'])
+		.pipe(changed('app/images/dist'))
+		.pipe(imagemin())
+		.pipe(dest('app/images/dist'))
+		.pipe(browserSync.stream())
 }
 
 function buildcopy() {
@@ -102,8 +101,8 @@ async function buildhtml() {
 	del('dist/parts', { force: true })
 }
 
-function cleandist() {
-	return del('dist/**/*', { force: true })
+async function cleandist() {
+	del('dist/**/*', { force: true })
 }
 
 function deploy() {
@@ -112,6 +111,7 @@ function deploy() {
 			root: 'dist/',
 			hostname: 'username@yousite.com',
 			destination: 'yousite/public_html/',
+			// clean: true, // Mirror copy with file deletion
 			include: [/* '*.htaccess' */], // Included files to deploy,
 			exclude: [ '**/Thumbs.db', '**/*.DS_Store' ],
 			recursive: true,
@@ -122,16 +122,13 @@ function deploy() {
 }
 
 function startwatch() {
-	watch('app/styles/**/*', { usePolling: true }, styles)
+	watch(`app/styles/${preprocessor}/**/*`, { usePolling: true }, styles)
 	watch(['app/js/**/*.js', '!app/js/**/*.min.js'], { usePolling: true }, scripts)
-	watch('app/images/src/**/*.{jpg,jpeg,png,webp,svg,gif}', { usePolling: true }, images)
+	watch('app/images/src/**/*', { usePolling: true }, images)
 	watch(`app/**/*.{${fileswatch}}`, { usePolling: true }).on('change', browserSync.reload)
 }
 
-exports.scripts = scripts
-exports.styles  = styles
-exports.images  = images
-exports.deploy  = deploy
-exports.assets  = series(scripts, styles, images)
-exports.build   = series(cleandist, images, scripts, styles, buildcopy, buildhtml)
-exports.default = series(scripts, styles, images, parallel(browsersync, startwatch))
+export { scripts, styles, images, deploy }
+export let assets = series(scripts, styles, images)
+export let build = series(cleandist, images, scripts, styles, buildcopy, buildhtml)
+export default series(scripts, styles, images, parallel(browsersync, startwatch))
