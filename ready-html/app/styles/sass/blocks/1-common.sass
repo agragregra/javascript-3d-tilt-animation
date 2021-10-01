@@ -3,7 +3,11 @@
 body
 	background-color: #1c1c1c
 	font-weight: 300
-	perspective: 1000px
+	// Обновление! «perspective: 1000px» теперь следует задавать непосредственному родителю того класса, к которому применяем GSAP («app.js», строка 36). В данном случае непосредственным родителем является класс «.card-header».
+
+// Обновление! Класс «preserve» должен находиться на каждом ключевом уровне цепочки DOM при сложной вложенной структуре сцены, начиная от класса с «perspective: 1000px» до непосредственных родителей элементов, размещённых в 3D-пространстве (см. index.html)
+.preserve
+	transform-style: preserve-3d
 
 .text-right
 	text-align: right
@@ -66,6 +70,7 @@ body
 	min-height: 700px
 	overflow: hidden
 	position: relative
+	perspective: 1000px
 	+media-breakpoint-down(sm)
 		overflow: visible
 	&::before
@@ -91,7 +96,6 @@ body
 	display: flex
 	justify-content: center
 	align-items: center
-	transform-style: preserve-3d
 	+media-breakpoint-down(lg)
 		transform-style: flat
 		transform: rotate(0)!important
@@ -147,7 +151,7 @@ body
 		+media-breakpoint-down(md)
 			display: none
 	+media-breakpoint-down(md)
-		background-image: url(../images/dest/card.png)
+		background-image: url(../images/dist/card.png)
 		background-size: cover
 		width: 100%
 		padding-top: 64.30062630480167%
